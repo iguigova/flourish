@@ -4,7 +4,6 @@
 
 ### Prerequisites
 - Go 1.20 or higher
-- `github.com/iguigova/flourish/ratelimiter` package
 
 ### Installation
 
@@ -14,8 +13,8 @@ go get github.com/iguigova/flourish/ratelimiter
 
 ### RateLimiter Interface:
 
-- Allow(clientID string) bool: Checks if a request should be allowed
-- SetRateLimit(clientID string, requests int, duration time.Duration): Configures client-specific limits
+- `Allow(clientID string) bool`: Checks if a request should be allowed
+- `SetRateLimit(clientID string, requests int, duration time.Duration)`: Configures client-specific limits
 
 ### Example
 
@@ -30,13 +29,11 @@ See the example usage in [main.go](../main.go)
    - Sliding window algorithm for request tracking
    - Memory-efficient state management
 
-## Time Breakdown
+### Time Breakdown
 
 - Core Implementation: 2 hours
 - Testing: 2 hours
 - Documentation: 1 hour
-
-Total time: 5 hours
         
 ### Considerations
 - A _naive_ implementation would be to reject requests arriving faster than (duration / requests). It would be sufficient to only compare against the timestamp of the last allowed request stored as atomic.Int64 but it would not fully satisfy the requirements. 
@@ -111,16 +108,16 @@ func NewRateLimiter(requests int, duration time.Duration) RateLimiter {
 ```
     
 - A _local_ implementation could keep its state in a hash table / go's maps
-  - State could be keyed by a client id (or struct), and persist a slice of request timestamps (filtered by the duration window)
+  - State could be keyed by a client id (or struct), and could persist a slice of request timestamps (filtered by the duration window)
   - Maps are not thread-safe.
 
 - A _distributed_ implementation would handle its own state, would add overhead but provide scalability in addressing the need for high throughput, low latency requirement
         
-### Thread Safety Notes
+#### Notes on thread-safety
 
 "Don't communicate by sharing memory; share memory by communicating." --Rob Pike
 
-Thread-safety considerations include *atomic* vs *sync.Map* vs *mutexes* vs *channels*         
+Thread-safety considerations include `atomic` vs `sync.Map` vs `mutexes` vs `channels`         
   - Use sync.Map when:
     - In high throughput scenarios
     - Entries are written once and read many times
@@ -151,8 +148,6 @@ Thread-safety considerations include *atomic* vs *sync.Map* vs *mutexes* vs *cha
    - Alert configuration
         
 ## Test Coverage (by Claude.ai)
-
-Let's evaluate the test coverage against each major requirement:
 
 Basic Rate Limiting Functionality ✓ Fully Covered:
 
