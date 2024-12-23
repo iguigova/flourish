@@ -1,5 +1,6 @@
 package ratelimiter
 
+
 import (
 	"sync/atomic"
 	"runtime"
@@ -89,6 +90,22 @@ func TestRateLimiterMultipleClients(t *testing.T) {
 	}
 	if rl.Allow("client2") {
 		t.Error("Fourth request for client2 should be denied")
+	}
+}
+
+func TestRateLimiterDefaultLimits(t *testing.T) {
+	rl := NewRateLimiterWithDefaults(2, time.Second)
+	clientID := "new-client"
+	
+	// Test default limits for new client
+	if !rl.Allow(clientID) {
+		t.Error("First request with default limit should be allowed")
+	}
+	if !rl.Allow(clientID) {
+		t.Error("Second request with default limit should be allowed")
+	}
+	if rl.Allow(clientID) {
+		t.Error("Third request with default limit should be denied")
 	}
 }
 
