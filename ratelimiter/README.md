@@ -1,13 +1,25 @@
-
 # Rate Limiter
+        
+## Usage
 
-## Notes
+### Prerequisites
+- Go 1.20 or higher
+- `github.com/iguigova/flourish/ratelimiter` package
+
+### Installation
+
+```bash
+go get github.com/iguigova/flourish/ratelimiter
+```
+
+        
+## Implemantation Details
         
 - A _naive_ implementation would be to reject requests arriving faster than (duration / requests). It would be sufficient to only compare against the timestamp of the last allowed request stored as atomic.Int64 but it would not fully satisfy the requirements. 
 
 - A _functional_ implementation would also be simple but would not follow common Go patterns or allow for a distributed version. Here is an example: 
 
-``` clojure
+```clojure
 (defn get-times [state request cutoff]
   (->> (get @state request [])
        (filterv #(> % cutoff))))
@@ -30,7 +42,7 @@
 (def b (rate-limiter 100 1000))
 ``` 
 
-``` go
+```go
 package ratelimiter
 
 import (
@@ -84,7 +96,7 @@ func NewRateLimiter(requests int, duration time.Duration) RateLimiter {
 
 "Don't communicate by sharing memory; share memory by communicating." --Rob Pike
 
-Thread-safety considerations include atomic vs sync.Map vs mutexes vs channels         
+Thread-safety considerations include *atomic* vs *sync.Map* vs *mutexes* vs *channels*         
   - Use sync.Map when:
     - In high throughput scenarios
     - Entries are written once and read many times
@@ -102,72 +114,96 @@ Thread-safety considerations include atomic vs sync.Map vs mutexes vs channels
     - Signaling events between parts of the program
     - Implementing pipelines or worker pools
     - Broadcasting to multiple goroutines
-  
-# Test Coverage (by Claude.ai)
 
-    Let's evaluate the test coverage against each major requirement:
+### Core implementation
 
-    Basic Rate Limiting Functionality ✓ Fully Covered:
-
-    TestRateLimiterBasicFunctionality: Tests basic allow/deny logic
-    TestRateLimiterWindowSliding: Tests sliding window algorithm
-    TestRateLimiterMultipleClients: Tests different limits for different clients
-    TestRateLimiterDefaultLimits: Tests default rate limit behavior
-
-    Thread Safety & Concurrency ✓ Fully Covered:
-
-    TestRateLimiterConcurrency: Tests concurrent request handling
-    TestRateLimiterConcurrentModification: Tests concurrent modifications
-    TestRateLimiterStress: High-load concurrent testing
-    TestRateLimiterMaxClients: Tests concurrent client creation
-
-    Performance & Memory Efficiency ✓ Fully Covered:
-
-    BenchmarkRateLimiter: Basic performance benchmarking
-    BenchmarkRateLimiterConcurrent: Concurrent performance testing
-    BenchmarkRateLimiterMemoryAllocation: Memory allocation testing
-    TestRateLimiterUnderMemoryPressure: Memory pressure handling
-    TestRateLimiterGracefulDegradation: Performance degradation testing
-
-    Extensibility & Distributed Systems ✓ Fully Covered:
-
-    TestRateLimiterDistributedBackendCompatibility: Tests interface compatibility
-    Mock implementations showing extensibility
-    MetricsRateLimiter implementation showing monitoring capabilities
-
-    Edge Cases & Error Handling ✓ Fully Covered:
-
-    TestRateLimiterInvalidDuration: Tests invalid time windows
-    TestRateLimiterOverflow: Tests numeric overflow scenarios
-    TestRateLimiterZeroLimit: Tests zero limit case
-    TestRateLimiterNegativeLimit: Tests negative limit case
-    TestRateLimiterTimeJump: Tests time-related edge cases
-    TestRateLimiterRecoveryAfterPanic: Tests system recovery
-
-    Long-term Stability ✓ Fully Covered:
-
-    TestRateLimiterLongRunningStability: Tests sustained operation
-    TestRateLimiterTimeSimulation: Tests behavior over simulated time periods
-    TestRateLimiterBurstyTraffic: Tests handling of traffic spikes
-
-Additional Strengths:
-
-    Clean-up and maintenance tests
-    Memory pressure handling
-    Comprehensive benchmarking suite
-    Distributed systems compatibility
-
-Potential Improvements:
-
-    Could add more tests for:
-        Different time window configurations (currently focused on seconds/milliseconds)
-        Rate limit adjustments during high load
-        Specific distributed system scenarios
-    Could expand metrics testing to cover more detailed statistics
-
-Overall Assessment: The test suite is very comprehensive and thoroughly covers all the core requirements from the problem statement. It includes both unit tests and integration tests, covers edge cases, performance scenarios, and even includes future extensibility considerations. The tests are well-structured and follow good testing practices with clear naming and separation of concerns.
-
-Would you like me to elaborate on any specific aspect of the test coverage?
+- InMemoryRateLimiter:
+   - Thread-safe implementation using mutex synchronization
+   - Sliding window algorithm for request tracking
+   - Memory-efficient state management
 
 
+### Future Improvements
 
+1. Distributed backend support:
+   - Redis integration
+   - Consistent hashing
+   - Cluster coordination
+
+2. Enhanced monitoring:
+   - Request tracking
+   - Alert configuration
+        
+## Test Coverage (by Claude.ai)
+
+Let's evaluate the test coverage against each major requirement:
+
+Basic Rate Limiting Functionality ✓ Fully Covered:
+
+TestRateLimiterBasicFunctionality: Tests basic allow/deny logic
+TestRateLimiterWindowSliding: Tests sliding window algorithm
+TestRateLimiterMultipleClients: Tests different limits for different clients
+TestRateLimiterDefaultLimits: Tests default rate limit behavior
+
+Thread Safety & Concurrency ✓ Fully Covered:
+
+TestRateLimiterConcurrency: Tests concurrent request handling
+TestRateLimiterConcurrentModification: Tests concurrent modifications
+TestRateLimiterStress: High-load concurrent testing
+TestRateLimiterMaxClients: Tests concurrent client creation
+
+Performance & Memory Efficiency ✓ Fully Covered:
+
+BenchmarkRateLimiter: Basic performance benchmarking
+BenchmarkRateLimiterConcurrent: Concurrent performance testing
+BenchmarkRateLimiterMemoryAllocation: Memory allocation testing
+TestRateLimiterUnderMemoryPressure: Memory pressure handling
+TestRateLimiterGracefulDegradation: Performance degradation testing
+
+Extensibility & Distributed Systems ✓ Fully Covered:
+
+TestRateLimiterDistributedBackendCompatibility: Tests interface compatibility
+Mock implementations showing extensibility
+MetricsRateLimiter implementation showing monitoring capabilities
+
+Edge Cases & Error Handling ✓ Fully Covered:
+
+TestRateLimiterInvalidDuration: Tests invalid time windows
+TestRateLimiterOverflow: Tests numeric overflow scenarios
+TestRateLimiterZeroLimit: Tests zero limit case
+TestRateLimiterNegativeLimit: Tests negative limit case
+TestRateLimiterTimeJump: Tests time-related edge cases
+TestRateLimiterRecoveryAfterPanic: Tests system recovery
+
+Long-term Stability ✓ Fully Covered:
+
+TestRateLimiterLongRunningStability: Tests sustained operation
+TestRateLimiterTimeSimulation: Tests behavior over simulated time periods
+TestRateLimiterBurstyTraffic: Tests handling of traffic spikes
+
+### Additional Strengths:
+
+- Clean-up and maintenance tests
+- Memory pressure handling
+- Comprehensive benchmarking suite
+- Distributed systems compatibility
+
+### Potential Improvements:
+
+- Could add more tests for:
+  - Different time window configurations (currently focused on seconds/milliseconds)
+  - Rate limit adjustments during high load
+  - Specific distributed system scenarios
+- Could expand metrics testing to cover more detailed statistics
+
+### Summary
+The test suite is very comprehensive and thoroughly covers all the core requirements from the problem statement. It includes both unit tests and integration tests, covers edge cases, performance scenarios, and even includes future extensibility considerations. The tests are well-structured and follow good testing practices with clear naming and separation of concerns.
+
+#### Running Tests
+
+```bash
+go test ./... -v        # Run all tests with verbose output
+go test -bench=.       # Run benchmarks
+go test -race         # Run tests with race detector
+```
+        
