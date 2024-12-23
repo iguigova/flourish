@@ -30,6 +30,14 @@ See the example usage in [main.go](../main.go)
    - Sliding window algorithm for request tracking
    - Memory-efficient state management
 
+## Time Breakdown
+
+- Core Implementation: 2 hours
+- Testing: 2 hours
+- Documentation: 1 hour
+
+Total time: 5 hours
+        
 ### Considerations
 - A _naive_ implementation would be to reject requests arriving faster than (duration / requests). It would be sufficient to only compare against the timestamp of the last allowed request stored as atomic.Int64 but it would not fully satisfy the requirements. 
 
