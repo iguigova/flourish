@@ -12,9 +12,25 @@
 go get github.com/iguigova/flourish/ratelimiter
 ```
 
+### RateLimiter Interface:
+
+- Allow(clientID string) bool: Checks if a request should be allowed
+- SetRateLimit(clientID string, requests int, duration time.Duration): Configures client-specific limits
+
+### Example
+
+See the example usage in [main.go](../main.go)
         
 ## Implemantation Details
-        
+
+### Core implementation
+
+- InMemoryRateLimiter:
+   - Thread-safe implementation using mutex synchronization
+   - Sliding window algorithm for request tracking
+   - Memory-efficient state management
+
+### Considerations
 - A _naive_ implementation would be to reject requests arriving faster than (duration / requests). It would be sufficient to only compare against the timestamp of the last allowed request stored as atomic.Int64 but it would not fully satisfy the requirements. 
 
 - A _functional_ implementation would also be simple but would not follow common Go patterns or allow for a distributed version. Here is an example: 
@@ -115,14 +131,6 @@ Thread-safety considerations include *atomic* vs *sync.Map* vs *mutexes* vs *cha
     - Implementing pipelines or worker pools
     - Broadcasting to multiple goroutines
 
-### Core implementation
-
-- InMemoryRateLimiter:
-   - Thread-safe implementation using mutex synchronization
-   - Sliding window algorithm for request tracking
-   - Memory-efficient state management
-
-
 ### Future Improvements
 
 1. Distributed backend support:
@@ -140,46 +148,46 @@ Let's evaluate the test coverage against each major requirement:
 
 Basic Rate Limiting Functionality ✓ Fully Covered:
 
-TestRateLimiterBasicFunctionality: Tests basic allow/deny logic
-TestRateLimiterWindowSliding: Tests sliding window algorithm
-TestRateLimiterMultipleClients: Tests different limits for different clients
-TestRateLimiterDefaultLimits: Tests default rate limit behavior
+- TestRateLimiterBasicFunctionality: Tests basic allow/deny logic
+- TestRateLimiterWindowSliding: Tests sliding window algorithm
+- TestRateLimiterMultipleClients: Tests different limits for different clients
+- TestRateLimiterDefaultLimits: Tests default rate limit behavior
 
 Thread Safety & Concurrency ✓ Fully Covered:
 
-TestRateLimiterConcurrency: Tests concurrent request handling
-TestRateLimiterConcurrentModification: Tests concurrent modifications
-TestRateLimiterStress: High-load concurrent testing
-TestRateLimiterMaxClients: Tests concurrent client creation
+- TestRateLimiterConcurrency: Tests concurrent request handling
+- TestRateLimiterConcurrentModification: Tests concurrent modifications
+- TestRateLimiterStress: High-load concurrent testing
+- TestRateLimiterMaxClients: Tests concurrent client creation
 
 Performance & Memory Efficiency ✓ Fully Covered:
 
-BenchmarkRateLimiter: Basic performance benchmarking
-BenchmarkRateLimiterConcurrent: Concurrent performance testing
-BenchmarkRateLimiterMemoryAllocation: Memory allocation testing
-TestRateLimiterUnderMemoryPressure: Memory pressure handling
-TestRateLimiterGracefulDegradation: Performance degradation testing
+- BenchmarkRateLimiter: Basic performance benchmarking
+- BenchmarkRateLimiterConcurrent: Concurrent performance testing
+- BenchmarkRateLimiterMemoryAllocation: Memory allocation testing
+- TestRateLimiterUnderMemoryPressure: Memory pressure handling
+- TestRateLimiterGracefulDegradation: Performance degradation testing
 
 Extensibility & Distributed Systems ✓ Fully Covered:
 
-TestRateLimiterDistributedBackendCompatibility: Tests interface compatibility
-Mock implementations showing extensibility
-MetricsRateLimiter implementation showing monitoring capabilities
+- TestRateLimiterDistributedBackendCompatibility: Tests interface compatibility
+- Mock implementations showing extensibility
+- MetricsRateLimiter implementation showing monitoring capabilities
 
 Edge Cases & Error Handling ✓ Fully Covered:
 
-TestRateLimiterInvalidDuration: Tests invalid time windows
-TestRateLimiterOverflow: Tests numeric overflow scenarios
-TestRateLimiterZeroLimit: Tests zero limit case
-TestRateLimiterNegativeLimit: Tests negative limit case
-TestRateLimiterTimeJump: Tests time-related edge cases
-TestRateLimiterRecoveryAfterPanic: Tests system recovery
+- TestRateLimiterInvalidDuration: Tests invalid time windows
+- TestRateLimiterOverflow: Tests numeric overflow scenarios
+- TestRateLimiterZeroLimit: Tests zero limit case
+- TestRateLimiterNegativeLimit: Tests negative limit case
+- TestRateLimiterTimeJump: Tests time-related edge cases
+- TestRateLimiterRecoveryAfterPanic: Tests system recovery
 
 Long-term Stability ✓ Fully Covered:
 
-TestRateLimiterLongRunningStability: Tests sustained operation
-TestRateLimiterTimeSimulation: Tests behavior over simulated time periods
-TestRateLimiterBurstyTraffic: Tests handling of traffic spikes
+- TestRateLimiterLongRunningStability: Tests sustained operation
+- TestRateLimiterTimeSimulation: Tests behavior over simulated time periods
+- TestRateLimiterBurstyTraffic: Tests handling of traffic spikes
 
 ### Additional Strengths:
 
