@@ -559,10 +559,11 @@ func TestRateLimiterClientCleanup(t *testing.T) {
 	
 	for clientID, state := range rl.clients {
 		// Only check timestamps that are outside our window
-		now := time.Now()
+		now := time.Now().UnixNano()
+		cutoff := now - state.duration
 		activeRequests := 0
 		for _, ts := range state.window {
-			if ts.After(now.Add(-state.duration)) {
+			if ts > cutoff {
 				activeRequests++
 			}
 		}
@@ -891,30 +892,28 @@ func TestRateLimiterTimeSimulation(t *testing.T) {
 	rl.SetRateLimit(clientID, requestsPerDay, time.Hour) // Use 1 hour window instead of 24 hours for faster testing
 	
 	var totalSuccesses int64
-	baseTime := time.Now()
 	
 	for day := 0; day < numDays; day++ {
 		// For each day, try 2x the allowed requests
 		for request := 0; request < requestsPerDay*2; request++ {
-			// Simulate time passing within the hour
-			simulatedTime := baseTime.Add(time.Duration(day) * time.Hour)
-			
+		
 			// Get client state and manually update window timestamps for testing
 			rl.mu.Lock()
 			client, exists := rl.clients[clientID]
 			if !exists {
 				client = &clientState{
 					requests: requestsPerDay,
-					duration: time.Hour,
-					window:   make([]time.Time, 0, requestsPerDay),
+					duration: time.Hour.Nanoseconds(),
+					window:   make([]int64, 0, requestsPerDay),
 				}
 				rl.clients[clientID] = client
 			}
 			
 			// Clean old entries based on simulated time
+			simulatedTime := time.Now().UnixNano() + int64(day) * int64(time.Hour)
 			newWindow := client.window[:0]
 			for _, ts := range client.window {
-				if ts.After(simulatedTime.Add(-client.duration)) {
+				if ts > simulatedTime - client.duration {
 					newWindow = append(newWindow, ts)
 				}
 			}

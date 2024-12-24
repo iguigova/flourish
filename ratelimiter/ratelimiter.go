@@ -14,8 +14,8 @@ type RateLimiter interface {
 // clientState holds the rate limiting configuration and state for a client
 type clientState struct {
 	requests int
-	duration time.Duration
-	window   []time.Time
+	duration int64 // Duration in nanoseconds
+	window   []int64 // Unix timestamps in nanoseconds
 }
 
 // InMemoryRateLimiter implements the RateLimiter interface using a sliding window algorithm
@@ -23,7 +23,7 @@ type InMemoryRateLimiter struct {
 	mu              sync.RWMutex
 	clients         map[string]*clientState
 	defaultRequests int
-	defaultDuration time.Duration
+	defaultDuration int64
 }
 
 // NewRateLimiter creates a new instance of InMemoryRateLimiter with default settings
@@ -36,26 +36,19 @@ func NewRateLimiterWithDefaults(defaultRequests int, defaultDuration time.Durati
 	return &InMemoryRateLimiter{
 		clients:         make(map[string]*clientState),
 		defaultRequests: defaultRequests,
-		defaultDuration: defaultDuration,
+		defaultDuration: defaultDuration.Nanoseconds(),
 	}
 }
 
 // filterTimestamps removes timestamps older than the cutoff time and returns the filtered window
-func filterTimestamps(timestamps []time.Time, cutoff time.Time) []time.Time {
+func filterTimestamps(timestamps []int64, cutoff int64) []int64 {
 	filtered := timestamps[:0]
 	for _, ts := range timestamps {
-		if ts.After(cutoff) {
+		if ts > cutoff {
 			filtered = append(filtered, ts)
 		}
 	}
 	return filtered
-}
-
-// filterTimestampsByDuration returns a new window with timestamps within the given duration from now
-func filterTimestampsByDuration(timestamps []time.Time, duration time.Duration) []time.Time {
-	now := time.Now()
-	cutoff := now.Add(-duration)
-	return filterTimestamps(timestamps, cutoff)
 }
 
 // SetRateLimit configures the rate limit for a specific client
@@ -67,14 +60,18 @@ func (rl *InMemoryRateLimiter) SetRateLimit(clientID string, requests int, durat
 		requests = 0
 	}
 	
-	var existingWindow []time.Time
+	durationNanos := duration.Nanoseconds()
+	now := time.Now().UnixNano()
+	cutoff := now - durationNanos
+	
+	var existingWindow []int64
 	if existingClient, exists := rl.clients[clientID]; exists {
-		existingWindow = filterTimestampsByDuration(existingClient.window, duration)
+		existingWindow = filterTimestamps(existingClient.window, cutoff)
 	}
 	
 	rl.clients[clientID] = &clientState{
 		requests: requests,
-		duration: duration,
+		duration: durationNanos,
 		window:   existingWindow,
 	}
 }
@@ -89,17 +86,19 @@ func (rl *InMemoryRateLimiter) Allow(clientID string) bool {
 		client = &clientState{
 			requests: rl.defaultRequests,
 			duration: rl.defaultDuration,
-			window:   make([]time.Time, 0, rl.defaultRequests),
+			window:   make([]int64, 0, rl.defaultRequests),
 		}
 		rl.clients[clientID] = client
 	}
 	
-	client.window = filterTimestampsByDuration(client.window, client.duration)
+	now := time.Now().UnixNano()
+	cutoff := now - client.duration
+	client.window = filterTimestamps(client.window, cutoff)
 	
 	if len(client.window) >= client.requests {
 		return false
 	}
 	
-	client.window = append(client.window, time.Now())
+	client.window = append(client.window, now)
 	return true
 }
