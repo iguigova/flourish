@@ -1,6 +1,5 @@
 package ratelimiter
 
-
 import (
 	"sync/atomic"
 	"runtime"
@@ -1007,4 +1006,189 @@ func TestRateLimiterConcurrentCleanup(t *testing.T) {
 	for err := range errors {
 		t.Error(err)
 	}
+}
+
+func TestRateLimiterDurationDecrease(t *testing.T) {
+    rl := NewRateLimiter()
+    clientID := "window-decrease-client"
+
+    // Initial setup: 3 requests per 2 seconds
+    rl.SetRateLimit(clientID, 3, 2*time.Second)
+
+    // Make requests spaced 500ms apart
+    if !rl.Allow(clientID) {
+        t.Error("First request at t=0 should be allowed")
+    }
+    time.Sleep(500 * time.Millisecond)
+
+    if !rl.Allow(clientID) {
+        t.Error("Second request at t=500ms should be allowed")
+    }
+    time.Sleep(500 * time.Millisecond)
+
+    if !rl.Allow(clientID) {
+        t.Error("Third request at t=1s should be allowed")
+    }
+
+    // At t=1s, decrease window to 750ms
+    // This should only keep the most recent request in the window
+    rl.SetRateLimit(clientID, 1, 750*time.Millisecond)
+
+    // Request should be denied as the last request is still within 750ms
+    if rl.Allow(clientID) {
+        t.Error("Request should be denied as last request is within new 750ms window")
+    }
+
+    // Wait for 750ms window to pass
+    time.Sleep(800 * time.Millisecond)
+
+    // Should now allow new requests
+    if !rl.Allow(clientID) {
+        t.Error("Request should be allowed after 750ms window passed")
+    }
+}
+
+func TestRateLimiterDurationChangeWithConcurrency(t *testing.T) {
+    rl := NewRateLimiter()
+    clientID := "duration-concurrent-client"
+    
+    // Initial setup
+    rl.SetRateLimit(clientID, 5, time.Second)
+    
+    // Create channels for synchronization
+    requestsDone := make(chan bool)
+    durationChanged := make(chan bool)
+    
+    // Start goroutine to make requests
+    go func() {
+        for i := 0; i < 10; i++ {
+            rl.Allow(clientID)
+            time.Sleep(100 * time.Millisecond)
+        }
+        requestsDone <- true
+    }()
+    
+    // Start goroutine to change duration
+    go func() {
+        time.Sleep(300 * time.Millisecond) // Wait for some requests to accumulate
+        rl.SetRateLimit(clientID, 5, 2*time.Second)
+        durationChanged <- true
+    }()
+    
+    // Wait for both operations to complete
+    <-requestsDone
+    <-durationChanged
+    
+    // Verify rate limit is still enforced
+    allowedCount := 0
+    for i := 0; i < 5; i++ {
+        if rl.Allow(clientID) {
+            allowedCount++
+        }
+    }
+    
+    // Should respect the rate limit even after concurrent duration change
+    if allowedCount > 5 {
+        t.Errorf("Rate limit violated after concurrent duration change: got %d allowed requests, expected <= 5", allowedCount)
+    }
+}
+
+func TestRateLimiterRapidDurationChanges(t *testing.T) {
+    rl := NewRateLimiter()
+    clientID := "rapid-duration-client"
+    
+    durations := []time.Duration{
+        time.Second,
+        500 * time.Millisecond,
+        2 * time.Second,
+        750 * time.Millisecond,
+        time.Second,
+    }
+    
+    // Set initial rate limit
+    rl.SetRateLimit(clientID, 2, durations[0])
+    
+    // Make initial request
+    if !rl.Allow(clientID) {
+        t.Error("First request should be allowed")
+    }
+    
+    // Rapidly change durations and make requests
+    for _, duration := range durations {
+        rl.SetRateLimit(clientID, 2, duration)
+        
+        // Small delay to simulate real-world scenario
+        time.Sleep(50 * time.Millisecond)
+        
+        // Make request
+        allowed := rl.Allow(clientID)
+        t.Logf("Request with duration %v allowed: %v", duration, allowed)
+    }
+}
+
+func TestRateLimiterDurationEdgeCases(t *testing.T) {
+    rl := NewRateLimiter()
+    clientID := "edge-case-client"
+    
+    testCases := []struct {
+        name     string
+        duration time.Duration
+        requests int
+        want     bool
+    }{
+        {"Zero Duration", 0, 5, false},
+        {"Negative Duration", -time.Second, 5, false},
+        {"Very Short Duration", time.Millisecond, 5, true},
+        {"Very Long Duration", 24 * time.Hour, 5, true},
+        {"Max Duration", time.Duration(1<<63 - 1), 5, true},
+    }
+    
+    for _, tc := range testCases {
+        t.Run(tc.name, func(t *testing.T) {
+            rl.SetRateLimit(clientID, tc.requests, tc.duration)
+            got := rl.Allow(clientID)
+            if got != tc.want {
+                t.Errorf("Allow() with duration %v = %v; want %v", tc.duration, got, tc.want)
+            }
+        })
+    }
+}
+
+func TestRateLimiterRequestPreservation(t *testing.T) {
+    rl := NewRateLimiter()
+    clientID := "preservation-client"
+    
+    // Set initial rate limit: 3 requests per second
+    rl.SetRateLimit(clientID, 3, time.Second)
+    
+    // Make 2 requests
+    if !rl.Allow(clientID) {
+        t.Error("First request should be allowed")
+    }
+    if !rl.Allow(clientID) {
+        t.Error("Second request should be allowed")
+    }
+    
+    // Change requests limit but keep duration
+    rl.SetRateLimit(clientID, 4, time.Second)
+    
+    // Should still count previous requests
+    if rl.Allow(clientID) && rl.Allow(clientID) && rl.Allow(clientID) {
+        t.Error("Should not allow 3 more requests as previous requests should be preserved")
+    }
+    
+    // Wait for window to pass
+    time.Sleep(1100 * time.Millisecond)
+    
+    // Should now allow requests under new limit
+    for i := 0; i < 4; i++ {
+        if !rl.Allow(clientID) {
+            t.Errorf("Request %d should be allowed under new limit after window reset", i+1)
+        }
+    }
+    
+    // Fifth request should be denied
+    if rl.Allow(clientID) {
+        t.Error("Fifth request should be denied under new limit")
+    }
 }

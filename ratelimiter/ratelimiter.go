@@ -40,20 +40,42 @@ func NewRateLimiterWithDefaults(defaultRequests int, defaultDuration time.Durati
 	}
 }
 
+// filterTimestamps removes timestamps older than the cutoff time and returns the filtered window
+func filterTimestamps(timestamps []time.Time, cutoff time.Time) []time.Time {
+	filtered := timestamps[:0]
+	for _, ts := range timestamps {
+		if ts.After(cutoff) {
+			filtered = append(filtered, ts)
+		}
+	}
+	return filtered
+}
+
+// filterTimestampsByDuration returns a new window with timestamps within the given duration from now
+func filterTimestampsByDuration(timestamps []time.Time, duration time.Duration) []time.Time {
+	now := time.Now()
+	cutoff := now.Add(-duration)
+	return filterTimestamps(timestamps, cutoff)
+}
+
 // SetRateLimit configures the rate limit for a specific client
 func (rl *InMemoryRateLimiter) SetRateLimit(clientID string, requests int, duration time.Duration) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-
-	// Disable rate limiting when input is invalid
+	
 	if requests < 0 || duration <= 0 {
 		requests = 0
 	}
-
+	
+	var existingWindow []time.Time
+	if existingClient, exists := rl.clients[clientID]; exists {
+		existingWindow = filterTimestampsByDuration(existingClient.window, duration)
+	}
+	
 	rl.clients[clientID] = &clientState{
 		requests: requests,
 		duration: duration,
-		window:   make([]time.Time, 0, requests),
+		window:   existingWindow,
 	}
 }
 
@@ -61,10 +83,9 @@ func (rl *InMemoryRateLimiter) SetRateLimit(clientID string, requests int, durat
 func (rl *InMemoryRateLimiter) Allow(clientID string) bool {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
-
+	
 	client, exists := rl.clients[clientID]
 	if !exists {
-		// Create new client with default rate limit
 		client = &clientState{
 			requests: rl.defaultRequests,
 			duration: rl.defaultDuration,
@@ -72,25 +93,13 @@ func (rl *InMemoryRateLimiter) Allow(clientID string) bool {
 		}
 		rl.clients[clientID] = client
 	}
-
-	now := time.Now()
-	windowStart := now.Add(-client.duration)
-
-	// Remove timestamps outside the current window
-	newWindow := client.window[:0]
-	for _, ts := range client.window {
-		if ts.After(windowStart) {
-			newWindow = append(newWindow, ts)
-		}
-	}
-	client.window = newWindow
-
-	// Check if we're at the limit
+	
+	client.window = filterTimestampsByDuration(client.window, client.duration)
+	
 	if len(client.window) >= client.requests {
 		return false
 	}
-
-	// Add current request timestamp
-	client.window = append(client.window, now)
+	
+	client.window = append(client.window, time.Now())
 	return true
 }
