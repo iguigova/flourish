@@ -13,14 +13,15 @@ type RateLimiter interface {
 
 // clientState holds the rate limiting configuration and state for a client
 type clientState struct {
+	mu       sync.Mutex  // Individual lock for this client
 	requests int
-	duration int64 // Duration in nanoseconds
-	window   []int64 // Unix timestamps in nanoseconds
+	duration int64      // Duration in nanoseconds
+	window   []int64    // Unix timestamps in nanoseconds
 }
 
 // InMemoryRateLimiter implements the RateLimiter interface using a sliding window algorithm
 type InMemoryRateLimiter struct {
-	mu              sync.RWMutex
+	mu              sync.RWMutex  // Only used when accessing the clients map
 	clients         map[string]*clientState
 	defaultRequests int
 	defaultDuration int64
@@ -40,6 +41,34 @@ func NewRateLimiterWithDefaults(defaultRequests int, defaultDuration time.Durati
 	}
 }
 
+// getOrCreateClient retrieves an existing client or creates a new one
+func (rl *InMemoryRateLimiter) getOrCreateClient(clientID string) *clientState {
+	rl.mu.RLock()
+	client, exists := rl.clients[clientID]
+	rl.mu.RUnlock()
+	
+	if exists {
+		return client
+	}
+	
+	// Need to create new client - acquire write lock
+	rl.mu.Lock()
+	// Double-check pattern in case another goroutine created it
+	if client, exists = rl.clients[clientID]; exists {
+		rl.mu.Unlock()
+		return client
+	}
+	
+	client = &clientState{
+		requests: rl.defaultRequests,
+		duration: rl.defaultDuration,
+		window:   make([]int64, 0, rl.defaultRequests),
+	}
+	rl.clients[clientID] = client
+	rl.mu.Unlock()
+	return client
+}
+
 // filterTimestamps removes timestamps older than the cutoff time and returns the filtered window
 func filterTimestamps(timestamps []int64, cutoff int64) []int64 {
 	filtered := timestamps[:0]
@@ -53,43 +82,28 @@ func filterTimestamps(timestamps []int64, cutoff int64) []int64 {
 
 // SetRateLimit configures the rate limit for a specific client
 func (rl *InMemoryRateLimiter) SetRateLimit(clientID string, requests int, duration time.Duration) {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-	
 	if requests < 0 || duration <= 0 {
 		requests = 0
 	}
+	
+	client := rl.getOrCreateClient(clientID)
+	client.mu.Lock()
+	defer client.mu.Unlock()
 	
 	durationNanos := duration.Nanoseconds()
 	now := time.Now().UnixNano()
 	cutoff := now - durationNanos
 	
-	var existingWindow []int64
-	if existingClient, exists := rl.clients[clientID]; exists {
-		existingWindow = filterTimestamps(existingClient.window, cutoff)
-	}
-	
-	rl.clients[clientID] = &clientState{
-		requests: requests,
-		duration: durationNanos,
-		window:   existingWindow,
-	}
+	client.window = filterTimestamps(client.window, cutoff)
+	client.requests = requests
+	client.duration = durationNanos
 }
 
 // Allow checks if a request from a client should be allowed based on their rate limit
 func (rl *InMemoryRateLimiter) Allow(clientID string) bool {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
-	
-	client, exists := rl.clients[clientID]
-	if !exists {
-		client = &clientState{
-			requests: rl.defaultRequests,
-			duration: rl.defaultDuration,
-			window:   make([]int64, 0, rl.defaultRequests),
-		}
-		rl.clients[clientID] = client
-	}
+	client := rl.getOrCreateClient(clientID)
+	client.mu.Lock()
+	defer client.mu.Unlock()
 	
 	now := time.Now().UnixNano()
 	cutoff := now - client.duration

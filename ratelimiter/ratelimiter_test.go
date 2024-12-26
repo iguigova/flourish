@@ -1191,3 +1191,135 @@ func TestRateLimiterRequestPreservation(t *testing.T) {
         t.Error("Fifth request should be denied under new limit")
     }
 }
+
+func BenchmarkRateLimiterHighContention(b *testing.B) {
+    rl := NewRateLimiter()
+    // Use a small set of clients to increase contention
+    numClients := 10
+    clients := make([]string, numClients)
+    
+    for i := 0; i < numClients; i++ {
+        clients[i] = fmt.Sprintf("bench-client-%d", i)
+        rl.SetRateLimit(clients[i], 1000000, time.Second) // High limit to avoid rate limiting effects
+    }
+    
+    b.ResetTimer()
+    b.RunParallel(func(pb *testing.PB) {
+        i := 0
+        for pb.Next() {
+            // Repeatedly hit the same few clients
+            clientID := clients[i%numClients]
+            rl.Allow(clientID)
+            i++
+        }
+    })
+}
+
+func BenchmarkRateLimiterMixedWorkload(b *testing.B) {
+    rl := NewRateLimiter()
+    numClients := 100
+    clients := make([]string, numClients)
+    
+    for i := 0; i < numClients; i++ {
+        clients[i] = fmt.Sprintf("bench-client-%d", i)
+        rl.SetRateLimit(clients[i], 1000000, time.Second)
+    }
+    
+    b.ResetTimer()
+    b.RunParallel(func(pb *testing.PB) {
+        i := 0
+        for pb.Next() {
+            if i%100 == 0 {
+                // Occasionally update rate limits
+                clientID := clients[i%numClients]
+                rl.SetRateLimit(clientID, 1000000, time.Second)
+            } else {
+                // Mostly check allows
+                clientID := clients[i%numClients]
+                rl.Allow(clientID)
+            }
+            i++
+        }
+    })
+}
+
+func TestRateLimiterConcurrentAccessPatterns(t *testing.T) {
+    if testing.Short() {
+        t.Skip("Skipping concurrent access pattern test in short mode")
+    }
+    
+    rl := NewRateLimiter()
+    numClients := 100
+    numOperations := 10000
+    var wg sync.WaitGroup
+    
+    // Track timing statistics
+    var totalDuration time.Duration
+    var operationCount int64
+    var mu sync.Mutex
+    
+    // Launch goroutines that perform different access patterns
+    for i := 0; i < numClients; i++ {
+        wg.Add(3) // 3 goroutines per client
+        
+        clientID := fmt.Sprintf("client-%d", i)
+        
+        // Goroutine 1: Frequent Allow checks
+        go func(id string) {
+            defer wg.Done()
+            for j := 0; j < numOperations; j++ {
+                start := time.Now()
+                rl.Allow(id)
+                duration := time.Since(start)
+                
+                mu.Lock()
+                totalDuration += duration
+                operationCount++
+                mu.Unlock()
+                
+                time.Sleep(time.Microsecond) // Small delay to simulate real work
+            }
+        }(clientID)
+        
+        // Goroutine 2: Occasional rate limit updates
+        go func(id string) {
+            defer wg.Done()
+            for j := 0; j < numOperations/100; j++ { // Less frequent updates
+                start := time.Now()
+                rl.SetRateLimit(id, 100+j, time.Second)
+                duration := time.Since(start)
+                
+                mu.Lock()
+                totalDuration += duration
+                operationCount++
+                mu.Unlock()
+                
+                time.Sleep(time.Millisecond) // Longer delay for updates
+            }
+        }(clientID)
+        
+        // Goroutine 3: Mixed rapid-fire operations
+        go func(id string) {
+            defer wg.Done()
+            for j := 0; j < numOperations; j++ {
+                start := time.Now()
+                if j%50 == 0 {
+                    rl.SetRateLimit(id, 100, time.Second)
+                } else {
+                    rl.Allow(id)
+                }
+                duration := time.Since(start)
+                
+                mu.Lock()
+                totalDuration += duration
+                operationCount++
+                mu.Unlock()
+            }
+        }(clientID)
+    }
+    
+    wg.Wait()
+    
+    avgDuration := totalDuration / time.Duration(operationCount)
+    t.Logf("Average operation duration: %v across %d operations", avgDuration, operationCount)
+}
