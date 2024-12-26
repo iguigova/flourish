@@ -28,12 +28,15 @@ See the example usage in [main.go](../main.go)
    - Thread-safe implementation using mutex synchronization
    - Sliding window algorithm for request tracking
    - Memory-efficient state management
-
+   - Use int64 rather than time.Time to improve memory uasage and performance
+   - Use of limiter-level locks and client-level locks to minimize the duration of required locking
+        
 ### Time Breakdown
 
 - Core Implementation: 2 hours
 - Testing: 2 hours
 - Documentation: 1 hour
+- Updates: 2 hours
         
 ### Considerations
 - A _naive_ implementation would be to reject requests arriving faster than (duration / requests). It would be sufficient to only compare against the timestamp of the last allowed request stored as atomic.Int64 but it would not fully satisfy the requirements. 
@@ -217,4 +220,21 @@ go test ./... -v        # Run all tests with verbose output
 go test -bench=.       # Run benchmarks
 go test -race         # Run tests with race detector
 ```
-        
+
+#### Benchmark results
+- [2 level locks](https://github.com/iguigova/flourish/commit/3f0856117d3214addcb039cba64afeba3db59710)
+```        
+go test -bench=.
+goos: linux
+goarch: amd64
+pkg: github.com/iguigova/flourish/ratelimiter
+cpu: 11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz
+BenchmarkRateLimiter-16                    	 2051318	       576.3 ns/op
+BenchmarkRateLimiterConcurrent-16          	 2382546	       501.8 ns/op
+BenchmarkRateLimiterMultipleClients-16     	17158329	        60.68 ns/op
+BenchmarkRateLimiterMemoryAllocation-16    	 2038870	       586.3 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRateLimiterHighContention-16      	 1000000	      3134 ns/op
+BenchmarkRateLimiterMixedWorkload-16       	 3060484	       717.3 ns/op
+PASS
+ok  	github.com/iguigova/flourish/ratelimiter	20.335s
+```        
