@@ -237,4 +237,21 @@ BenchmarkRateLimiterHighContention-16      	 1000000	      3134 ns/op
 BenchmarkRateLimiterMixedWorkload-16       	 3060484	       717.3 ns/op
 PASS
 ok  	github.com/iguigova/flourish/ratelimiter	20.335s
-```        
+```
+
+- [filterTimestamp shortcut loop](https://github.com/iguigova/flourish/commit/6fef615df5685657d073ebeb0e9bc056f8eee955)
+```
+go test -bench=.
+goos: linux
+goarch: amd64
+pkg: github.com/iguigova/flourish/ratelimiter
+cpu: 11th Gen Intel(R) Core(TM) i7-11850H @ 2.50GHz
+BenchmarkRateLimiter-16                    	25025702	        45.72 ns/op
+BenchmarkRateLimiterConcurrent-16          	12385672	        97.87 ns/op
+BenchmarkRateLimiterMultipleClients-16     	24017977	        50.01 ns/op
+BenchmarkRateLimiterMemoryAllocation-16    	25609137	        46.62 ns/op	       0 B/op	       0 allocs/op
+BenchmarkRateLimiterHighContention-16      	12232365	        87.81 ns/op
+BenchmarkRateLimiterMixedWorkload-16       	20413990	        58.29 ns/op
+PASS
+ok  	github.com/iguigova/flourish/ratelimiter	17.530s
+```
