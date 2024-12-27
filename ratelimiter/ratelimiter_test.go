@@ -8,6 +8,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"reflect"
 )
 
 func TestRateLimiterBasicFunctionality(t *testing.T) {
@@ -1322,4 +1323,107 @@ func TestRateLimiterConcurrentAccessPatterns(t *testing.T) {
     
     avgDuration := totalDuration / time.Duration(operationCount)
     t.Logf("Average operation duration: %v across %d operations", avgDuration, operationCount)
+}
+
+func TestFilterTimestamps(t *testing.T) {
+    tests := []struct {
+        name      string
+        input     []int64
+        cutoff    int64
+        expected  []int64
+    }{
+        {
+            name:      "all timestamps newer than cutoff",
+            input:     []int64{100, 200, 300, 400, 500},
+            cutoff:    50,
+            expected:  []int64{100, 200, 300, 400, 500},
+        },
+        {
+            name:      "all timestamps older than cutoff",
+            input:     []int64{100, 200, 300, 400, 500},
+            cutoff:    600,
+            expected:  []int64{},
+        },
+        {
+            name:      "mixed timestamps",
+            input:     []int64{100, 200, 300, 400, 500},
+            cutoff:    250,
+            expected:  []int64{300, 400, 500},
+        },
+        {
+            name:      "empty input",
+            input:     []int64{},
+            cutoff:    100,
+            expected:  []int64{},
+        },
+        {
+            name:      "single timestamp newer than cutoff",
+            input:     []int64{200},
+            cutoff:    100,
+            expected:  []int64{200},
+        },
+        {
+            name:      "single timestamp older than cutoff",
+            input:     []int64{100},
+            cutoff:    200,
+            expected:  []int64{},
+        },
+        {
+            name:      "cutoff exactly matches a timestamp",
+            input:     []int64{100, 200, 300, 400, 500},
+            cutoff:    300,
+            expected:  []int64{400, 500},
+        },
+    }
+
+    for _, tt := range tests {
+        t.Run(tt.name, func(t *testing.T) {
+            // Create a copy of input to verify we don't modify the original slice
+            inputCopy := make([]int64, len(tt.input))
+            copy(inputCopy, tt.input)
+
+            // Run the filter
+            result := filterTimestamps(tt.input, tt.cutoff)
+
+            // Check length
+            if len(result) != len(tt.expected) {
+                t.Errorf("length mismatch: got %v, want %v", len(result), len(tt.expected))
+            }
+
+            // Check contents
+            if !reflect.DeepEqual(result, tt.expected) {
+                t.Errorf("content mismatch:\ngot  %v\nwant %v", result, tt.expected)
+            }
+
+            // Verify the original slice wasn't modified (if it wasn't empty)
+            if len(inputCopy) > 0 && !reflect.DeepEqual(tt.input, inputCopy) {
+                t.Error("original slice was modified")
+            }
+
+            // Verify the capacity if there were any elements kept
+            if len(result) > 0 {
+                // The capacity should be the same as the input slice from the start of the valid elements
+                expectedCap := cap(tt.input) - (len(tt.input) - len(result))
+                if cap(result) != expectedCap {
+                    t.Errorf("capacity mismatch: got %v, want %v", cap(result), expectedCap)
+                }
+            }
+        })
+    }
+
+    // Additional test for slice optimization
+    t.Run("verify slice reuse", func(t *testing.T) {
+        original := []int64{100, 200, 300, 400, 500}
+        cutoff := int64(250)
+        
+        // Get the address of the first element we expect to keep
+        expectedAddr := &original[2] // 300 is at index 2
+
+        result := filterTimestamps(original, cutoff)
+
+        // Verify that the first element of our result points to the same memory
+        if len(result) > 0 && &result[0] != expectedAddr {
+            t.Error("filterTimestamps created a new slice instead of reusing the existing one")
+        }
+    })
 }

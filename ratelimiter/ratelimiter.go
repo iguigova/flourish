@@ -70,14 +70,23 @@ func (rl *InMemoryRateLimiter) getOrCreateClient(clientID string) *clientState {
 }
 
 // filterTimestamps removes timestamps older than the cutoff time and returns the filtered window
+// timestamps are guaranteed to be in ascending order since they're added using time.Now()
 func filterTimestamps(timestamps []int64, cutoff int64) []int64 {
-	filtered := timestamps[:0]
-	for _, ts := range timestamps {
-		if ts > cutoff {
-			filtered = append(filtered, ts)
-		}
-	}
-	return filtered
+    // Find first timestamp that's newer than cutoff
+    i := 0
+    for ; i < len(timestamps); i++ {
+        if timestamps[i] > cutoff {
+            break
+        }
+    }
+    
+    // If i == len(timestamps), all timestamps are older than cutoff
+    // If i == 0, all timestamps are newer than cutoff
+    // Otherwise i is the index of first timestamp we want to keep
+    
+    // Use same underlying array but slice from i onwards
+    // This avoids copying timestamps individually
+    return timestamps[i:]
 }
 
 // SetRateLimit configures the rate limit for a specific client
@@ -116,3 +125,4 @@ func (rl *InMemoryRateLimiter) Allow(clientID string) bool {
 	client.window = append(client.window, now)
 	return true
 }
+
