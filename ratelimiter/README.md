@@ -255,3 +255,25 @@ BenchmarkRateLimiterMixedWorkload-16       	20413990	        58.29 ns/op
 PASS
 ok  	github.com/iguigova/flourish/ratelimiter	17.530s
 ```
+
+## Stats Collection (Optional)
+
+A thread-safe stats collector is available for tracking rate limiter activity:
+
+```go
+collector := ratelimiter.NewStatsKeeper()
+
+// Record events
+collector.RecordAllow("client1")
+collector.RecordDeny("client1")
+
+// Get stats
+if stats, exists := collector.GetClientStats("client1"); exists {
+    fmt.Printf("Allowed: %d, Denied: %d\n", stats.Allowed, stats.Denied)
+}
+
+// Cleanup old stats
+collector.Cleanup(24 * time.Hour)
+```
+
+Safe for concurrent use. See `stats_test.go` for more examples.
