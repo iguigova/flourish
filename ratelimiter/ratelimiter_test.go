@@ -1383,7 +1383,7 @@ func TestFilterTimestamps(t *testing.T) {
             copy(inputCopy, tt.input)
 
             // Run the filter
-            result := filterTimestamps(tt.input, tt.cutoff)
+            result := filterBy(tt.input, tt.cutoff)
 
             // Check length
             if len(result) != len(tt.expected) {
@@ -1419,7 +1419,7 @@ func TestFilterTimestamps(t *testing.T) {
         // Get the address of the first element we expect to keep
         expectedAddr := &original[2] // 300 is at index 2
 
-        result := filterTimestamps(original, cutoff)
+        result := filterWithin(original, cutoff)
 
         // Verify that the first element of our result points to the same memory
         if len(result) > 0 && &result[0] != expectedAddr {

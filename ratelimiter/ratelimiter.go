@@ -69,9 +69,17 @@ func (rl *InMemoryRateLimiter) getOrCreateClient(clientID string) *clientState {
 	return client
 }
 
-// filterTimestamps removes timestamps older than the cutoff time and returns the filtered window
+// executeWithClientLock executes a function with a locked client state
+func (rl *InMemoryRateLimiter) executeWithClientLock(clientID string, fn func(*clientState)) {
+	client := rl.getOrCreateClient(clientID)
+	client.mu.Lock()
+	defer client.mu.Unlock()
+	fn(client)
+}
+
+// filterBy removes timestamps older than the cutoff time and returns the filtered window
 // timestamps are guaranteed to be in ascending order since they're added using time.Now()
-func filterTimestamps(timestamps []int64, cutoff int64) []int64 {
+func filterBy(timestamps []int64, cutoff int64) []int64 {
     // Find first timestamp that's newer than cutoff
     i := 0
     for ; i < len(timestamps); i++ {
@@ -89,40 +97,41 @@ func filterTimestamps(timestamps []int64, cutoff int64) []int64 {
     return timestamps[i:]
 }
 
+// filterWithin wraps filterBy to handle time calculations
+func filterWithin(timestamps []int64, duration int64) []int64 {
+    now := time.Now().UnixNano()
+    cutoff := now - duration
+    return filterBy(timestamps, cutoff)
+}
+
 // SetRateLimit configures the rate limit for a specific client
 func (rl *InMemoryRateLimiter) SetRateLimit(clientID string, requests int, duration time.Duration) {
 	if requests < 0 || duration <= 0 {
 		requests = 0
 	}
 	
-	client := rl.getOrCreateClient(clientID)
-	client.mu.Lock()
-	defer client.mu.Unlock()
-	
 	durationNanos := duration.Nanoseconds()
-	now := time.Now().UnixNano()
-	cutoff := now - durationNanos
-	
-	client.window = filterTimestamps(client.window, cutoff)
-	client.requests = requests
-	client.duration = durationNanos
+	rl.executeWithClientLock(clientID, func(client *clientState) {
+		client.window = filterWithin(client.window, durationNanos)
+		client.requests = requests
+		client.duration = durationNanos
+	})
 }
 
 // Allow checks if a request from a client should be allowed based on their rate limit
 func (rl *InMemoryRateLimiter) Allow(clientID string) bool {
-	client := rl.getOrCreateClient(clientID)
-	client.mu.Lock()
-	defer client.mu.Unlock()
-	
-	now := time.Now().UnixNano()
-	cutoff := now - client.duration
-	client.window = filterTimestamps(client.window, cutoff)
-	
-	if len(client.window) >= client.requests {
-		return false
-	}
-	
-	client.window = append(client.window, now)
-	return true
+	var allowed bool
+	rl.executeWithClientLock(clientID, func(client *clientState) {
+		client.window = filterWithin(client.window, client.duration)
+		
+		if len(client.window) >= client.requests {
+			allowed = false
+			return
+		}
+		
+		client.window = append(client.window, time.Now().UnixNano())
+		allowed = true
+	})
+	return allowed
 }
 
